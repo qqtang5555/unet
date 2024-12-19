@@ -7,26 +7,26 @@ from tqdm import tqdm
 
 def convert_labelme_json_to_masks(json_dir, masks_dir):
     files = os.listdir(json_dir)
-    print(f"Files in directory: {files}")
+    print(f"文件目录中的文件：{files}")
 
     # 定义一个标签值，用于表示病害区域
-    damaged = 255  # 或者其他您选择的整数值
+    damaged = 255  # 或者其他您选择的值
 
     for file in tqdm(files):
         if file.endswith(".json"):
             json_path = os.path.join(json_dir, file)
-            print(f"Processing JSON file: {json_path}")
+            print(f"正在处理 JSON 文件：{json_path}")
 
             with open(json_path, 'r') as f:
                 try:
                     data = json.load(f)
                 except json.JSONDecodeError as e:
-                    print(f"Error reading JSON file {json_path}: {e}")
+                    print(f"读取 JSON 文件时出错 {json_path}: {e}")
                     continue
 
-            # 检查 JSON 文件内容
+            # 检查 JSON 文件结构
             if 'shapes' not in data or 'imageHeight' not in data or 'imageWidth' not in data:
-                print(f"Invalid JSON structure in {json_path}")
+                print(f"{json_path} 中的 JSON 结构无效")
                 continue
 
             img_shape = (data['imageHeight'], data['imageWidth'])
@@ -34,39 +34,50 @@ def convert_labelme_json_to_masks(json_dir, masks_dir):
 
             for shape in data['shapes']:
                 shape_type = shape.get('shape_type', None)
-                print(f"Shape type: {shape_type}")
+                print(f"形状类型：{shape_type}")
 
                 if shape_type == 'polygon':
                     points = np.array(shape['points'], dtype=np.int32)
-                    points = points.reshape((-1, 1, 2))  # 将点转换为多边形所需的格式
+                    points = points.reshape((-1, 1, 2))  # 将点转换为多边形格式
                     cv2.fillPoly(mask, [points], color=damaged)
 
                 elif shape_type == 'circle':
-                    # 假设圆形由 'cx', 'cy', 和 'r' 定义
-                    cx, cy = map(int, shape['cx'], shape['cy'])  # 注意：这里需要您检查 JSON 的实际结构
-                    r = int(shape['r'])
-                    cv2.circle(mask, (cx, cy), r, color=damaged, thickness=-1)
+                    # 计算圆心和半径
+                    if len(shape['points']) == 2:
+                        p1, p2 = shape['points']
+                        p1 = np.array(p1)
+                        p2 = np.array(p2)
 
-                elif shape_type == 'rectangle':  # 如果您的数据中有矩形，可以添加此处理
-                    x, y, w, h = map(int, shape['points'][0] + shape['points'][1])  # 假设矩形由对角线上的两个点定义
-                    cv2.rectangle(mask, (x, y), (x+w, y+h), color=damaged, thickness=-1)
+                        # 圆心是两个点的中点
+                        cx, cy = (p1 + p2) / 2
+                        # 半径是两个点之间的距离的一半
+                        r = int(np.linalg.norm(p1 - p2) / 2)
+
+                        cx, cy = int(cx), int(cy)  # 转换为整数
+                        cv2.circle(mask, (cx, cy), r, color=damaged, thickness=-1)
+                    else:
+                        print(f"圆形数据不完整，跳过 {json_path}")
+
+                elif shape_type == 'rectangle':  # 处理矩形
+                    x, y, w, h = map(int, shape['points'][0] + shape['points'][1])
+                    cv2.rectangle(mask, (x, y), (x + w, y + h), color=damaged, thickness=-1)
 
                 elif shape_type == 'line' or shape_type == 'point':
-                    # 对于线和点，您可能想要不同的处理方式，或者简单地忽略它们
-                    print(f"Skipping unsupported shape type: {shape_type}")
-
+                    # 如果不支持的形状，选择跳过
+                    print(f"跳过不支持的形状类型：{shape_type}")
                 else:
-                    print(f"Unsupported shape type: {shape_type}")
+                    print(f"不支持的形状类型：{shape_type}")
 
-            # 检查掩码唯一值
-            print(f"Unique mask values: {np.unique(mask)}")
+            # 打印掩码的唯一值
+            print(f"掩码的唯一值：{np.unique(mask)}")
 
+            # 保存掩码为图像
             mask_filename = file.replace('.json', '_mask.png')
             mask_path = os.path.join(masks_dir, mask_filename)
-            Image.fromarray(mask).convert('L').save(mask_path)  # 确保以灰度图像保存
-            print(f"Saved mask to: {mask_path}")
+            Image.fromarray(mask).convert('L').save(mask_path)
+            print(f"已保存掩码：{mask_path}")
 
-# 调用函数时，传递实际的路径
+# 调用函数时，传递实际路径
 json_directory = r"D:\Projects\pythonProject\unet\data\json"
 masks_directory = r"D:\Projects\pythonProject\unet\data\masks"
 convert_labelme_json_to_masks(json_directory, masks_directory)
